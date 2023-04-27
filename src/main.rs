@@ -211,10 +211,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         for i in 0..num_points {
-            let p = &mut points[i];
-            p.x = p.x.max(-1.0).min(1.0);
-            p.y = p.y.max(-1.0).min(1.0);
-            p.z = p.z.max(-1.0).min(1.0);
             MsgSender::new(format!("nodes/{i}"))
                 .with_component(&[points[i].clone()])?
                 .with_component(&[colors[i].clone()])?
