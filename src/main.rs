@@ -213,14 +213,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 // Move nodes to satisfy edge length
                 for &(i, j) in &edges_indices {
                     let length = points_distance(&points, i, j, dims);
-                    if length < node_repelling_distance {
-                        let c = length - edge_length;
-                        let d = edge_strength * c * -0.5 / length.max(0.001);
-                        for k in 0..dims {
-                            let u = (points[j][k] - points[i][k]) * d;
-                            points[i][k] -= u;
-                            points[j][k] += u;
-                        }
+                    let c = length - edge_length;
+                    let d = edge_strength * c * -0.5 / length.max(0.001);
+                    for k in 0..dims {
+                        let u = (points[j][k] - points[i][k]) * d;
+                        points[i][k] -= u;
+                        points[j][k] += u;
                     }
                 }
             }
