@@ -111,6 +111,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect::<Vec<_>>();
 
+    let mut num_outgoing = vec![0; num_points];
+    let mut num_incoming = vec![0; num_points];
+    for &(i, j) in &edges_indices {
+        num_outgoing[i] += 1;
+        num_incoming[j] += 1;
+    }
+    let num_outgoing = num_outgoing;
+    let num_incoming = num_incoming;
+
     let mut colors = Vec::with_capacity(node_indices.len());
     let mut labels = Vec::with_capacity(node_indices.len());
     {
@@ -170,6 +179,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node_repelling_distance = 2.0;
     let float_strength = 0.02;
     let float_distance = 2.0;
+    let node_degree_strength = 0.01;
 
     // Init points with random values in many dimensions
     let mut points = vec![[0.0; MAX_DIMS]; num_points];
@@ -177,6 +187,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         for v in &mut points[i] {
             *v = rng.gen_range(-1.0..1.0);
         }
+        points[i][1] = num_incoming[i] as f32;
     }
 
     // Gradually reduce the number of dimensions while solving the constraints
@@ -192,6 +203,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         points[i][2] += float_strength;
                         points[j][2] -= float_strength;
                     }
+                }
+
+                // Move nodes with many edges towards y+
+                for i in 0..num_points {
+                    points[i][1] += node_degree_strength * (num_incoming[i] as f32 - points[i][1])
                 }
 
                 // Move nodes away from each other
