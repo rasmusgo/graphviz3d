@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 graphviz-rust = "0.6.2"
+rand = "0.8.5"
 rerun = "0.5.0"

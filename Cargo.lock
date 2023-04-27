@@ -1830,6 +1830,7 @@ name = "graphviz3d"
 version = "0.1.0"
 dependencies = [
  "graphviz-rust",
+ "rand",
  "rerun",
 ]
 
