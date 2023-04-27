@@ -99,16 +99,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect::<Vec<_>>();
 
-    let mut points = Vec::with_capacity(node_indices.len());
-    for _ in 0..num_points {
-        let point = Point3D {
-            x: rng.gen_range(-1.0..1.0),
-            y: rng.gen_range(-1.0..1.0),
-            z: rng.gen_range(-1.0..1.0),
-        };
-        points.push(point);
-    }
-
     let mut colors = Vec::with_capacity(node_indices.len());
     for _ in 0..num_points {
         colors.push(ColorRGBA::from_rgb(
@@ -151,89 +141,110 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let float_strength = 0.02;
     let float_distance = 2.0;
 
-    for _ in 0..10000 {
-        // Move parents upwards and children downwards
-        for &(i, j) in &edges_indices {
-            let p1 = &points[i];
-            let p2 = &points[j];
-            let dz = p1.z - p2.z;
-            if dz < float_distance {
-                points[i].z += float_strength;
-                points[j].z -= float_strength;
-            }
+    // Init points with random values in many dimensions
+    const MAX_DIMS: usize = 10;
+    let mut points = vec![[0.0; MAX_DIMS]; num_points];
+    for i in 0..num_points {
+        for v in &mut points[i] {
+            *v = rng.gen_range(-1.0..1.0);
         }
+    }
 
-        // Moves nodes away from each other
-        for i in 0..num_points {
-            for j in i + 1..num_points {
+    // Gradually reduce the number of dimensions while solving the constraints
+    for dims in (3..MAX_DIMS).rev() {
+        for _ in 0..100 {
+            // Move parents upwards and children downwards
+            for &(i, j) in &edges_indices {
                 let p1 = &points[i];
                 let p2 = &points[j];
-                let dx = p2.x - p1.x;
-                let dy = p2.y - p1.y;
-                let dz = p2.z - p1.z;
-                let length = (dx * dx + dy * dy + dz * dz).sqrt();
-
-                if length < node_repelling_distance {
-                    let c = length - node_repelling_distance;
-                    let d = node_repelling_strength * c * -0.5 / length;
-                    let p1 = &mut points[i];
-                    p1.x -= dx * d;
-                    p1.y -= dy * d;
-                    p1.z -= dz * d;
-                    let p2 = &mut points[j];
-                    p2.x += dx * d;
-                    p2.y += dy * d;
-                    p2.z += dz * d;
+                let dz = p2[2] - p1[2];
+                if dz < float_distance {
+                    points[i][2] -= float_strength;
+                    points[j][2] += float_strength;
                 }
             }
-        }
 
-        // Move nodes to satisfy edge length
-        for &(i, j) in &edges_indices {
-            let p1 = &points[i];
-            let p2 = &points[j];
-            let dx = p2.x - p1.x;
-            let dy = p2.y - p1.y;
-            let dz = p2.z - p1.z;
-            let length = (dx * dx + dy * dy + dz * dz).sqrt();
-            let c = length - edge_length;
-            let d = edge_strength * c * -0.5 / length;
+            // Move nodes away from each other
+            for i in 0..num_points {
+                for j in i + 1..num_points {
+                    let p1 = &points[i];
+                    let p2 = &points[j];
+                    let length = {
+                        let mut length_squared: f32 = 0.0;
+                        for k in 0..dims {
+                            let dk = p2[k] - p1[k];
+                            length_squared += dk * dk;
+                        }
+                        length_squared.sqrt()
+                    };
 
-            let p1 = &mut points[i];
-            p1.x -= dx * d;
-            p1.y -= dy * d;
-            p1.z -= dz * d;
-            let p2 = &mut points[j];
-            p2.x += dx * d;
-            p2.y += dy * d;
-            p2.z += dz * d;
-        }
+                    if length < node_repelling_distance {
+                        let c = node_repelling_distance - length;
+                        let d = c.min(node_repelling_strength) * 0.5 / length.max(0.001);
+                        for k in 0..dims {
+                            let u = (points[j][k] - points[i][k]) * d;
+                            points[i][k] -= u;
+                            points[j][k] += u;
+                        }
+                    }
+                }
+            }
 
-        for i in 0..num_points {
-            MsgSender::new(format!("nodes/{i}"))
-                .with_component(&[points[i].clone()])?
-                .with_component(&[colors[i].clone()])?
-                .with_component(&[labels[i].clone()])?
-                .with_splat(Radius(0.05))?
+            // Move nodes to satisfy edge length
+            for &(i, j) in &edges_indices {
+                let p1 = &points[i];
+                let p2 = &points[j];
+                let length = {
+                    let mut length_squared: f32 = 0.0;
+                    for k in 0..dims {
+                        let dk = p2[k] - p1[k];
+                        length_squared += dk * dk;
+                    }
+                    length_squared.sqrt()
+                };
+
+                if length < node_repelling_distance {
+                    let c = length - edge_length;
+                    let d = edge_strength * c * -0.5 / length.max(0.001);
+                    for k in 0..dims {
+                        let u = (points[j][k] - points[i][k]) * d;
+                        points[i][k] -= u;
+                        points[j][k] += u;
+                    }
+                }
+            }
+
+            for i in 0..num_points {
+                let point = Point3D {
+                    x: points[i][0],
+                    y: points[i][1],
+                    z: points[i][2],
+                };
+                MsgSender::new(format!("nodes/{i}"))
+                    .with_component(&[point])?
+                    .with_component(&[colors[i].clone()])?
+                    .with_component(&[labels[i].clone()])?
+                    .with_splat(Radius(0.05))?
+                    .send(&session)?;
+            }
+
+            let arrows = edges
+                .iter()
+                .map(|(a, b)| {
+                    let a = node_indices.get(&node_id_to_string(a)).unwrap();
+                    let b = node_indices.get(&node_id_to_string(b)).unwrap();
+                    let a = &points[*a];
+                    let b = &points[*b];
+                    Arrow3D {
+                        origin: [a[0], a[1], a[2]].into(),
+                        vector: [b[0] - a[0], b[1] - a[1], b[2] - a[2]].into(),
+                    }
+                })
+                .collect::<Vec<_>>();
+            MsgSender::new("edges")
+                .with_component(&arrows)?
                 .send(&session)?;
         }
-
-        let arrows = edges
-            .iter()
-            .map(|(a, b)| {
-                let a = node_indices.get(&node_id_to_string(a)).unwrap();
-                let b = node_indices.get(&node_id_to_string(b)).unwrap();
-                let a = &points[*a];
-                let b = &points[*b];
-                Arrow3D {
-                    origin: [a.x, a.y, a.z].into(),
-                    vector: [b.x - a.x, b.y - a.y, b.z - a.z].into(),
-                }
-            })
-            .collect::<Vec<_>>();
-        MsgSender::new("edges")
-            .with_component(&arrows)?
-            .send(&session)?;
     }
 
     // rerun::native_viewer::show(&session)?;
