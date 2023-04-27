@@ -35,8 +35,7 @@ pub fn node_id_to_string(node_id: &NodeId) -> String {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rng = thread_rng();
 
-    let dot =
-        std::fs::read_to_string("/home/rasmusgo/src/Reconstruction/docs/graphviz/cmake/gg.dot")?;
+    let dot = std::fs::read_to_string("../Reconstruction/docs/graphviz/cmake/gg.dot")?;
     let g: Graph = graphviz_rust::parse(dot.as_str())?;
     let statements = match g {
         Graph::Graph {
