@@ -7,6 +7,8 @@ use rerun::{
     MsgSender,
 };
 
+const MAX_DIMS: usize = 10;
+
 pub fn id_to_string(id: &Id) -> String {
     match id {
         Id::Html(ref v) => format!("html {}", v),
@@ -29,6 +31,16 @@ pub fn node_id_to_string(node_id: &NodeId) -> String {
     match node_id.1 {
         None => id_to_string(&node_id.0),
         Some(ref port) => format!("{}:{}", id_to_string(&node_id.0), port_to_string(port)),
+    }
+}
+
+trait Lerpable {
+    fn lerp(self, other: Self, t: f32) -> Self;
+}
+
+impl Lerpable for u8 {
+    fn lerp(self, other: u8, t: f32) -> u8 {
+        (self as f32 * (1.0 - t) + other as f32 * t).round() as u8
     }
 }
 
@@ -160,7 +172,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let float_distance = 2.0;
 
     // Init points with random values in many dimensions
-    const MAX_DIMS: usize = 10;
     let mut points = vec![[0.0; MAX_DIMS]; num_points];
     for i in 0..num_points {
         for v in &mut points[i] {
@@ -170,35 +181,41 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Gradually reduce the number of dimensions while solving the constraints
     for dims in (3..MAX_DIMS).rev() {
-        for _ in 0..100 {
-            // Move parents upwards and children downwards
-            for &(i, j) in &edges_indices {
-                let p1 = &points[i];
-                let p2 = &points[j];
-                let dz = p2[2] - p1[2];
-                if dz < float_distance {
-                    points[i][2] -= float_strength;
-                    points[j][2] += float_strength;
-                }
-            }
-
-            // Move nodes away from each other
-            for i in 0..num_points {
-                for j in i + 1..num_points {
+        for _ in 0..10 {
+            for _ in 0..10 {
+                // Move parents upwards and children downwards
+                for &(i, j) in &edges_indices {
                     let p1 = &points[i];
                     let p2 = &points[j];
-                    let length = {
-                        let mut length_squared: f32 = 0.0;
-                        for k in 0..dims {
-                            let dk = p2[k] - p1[k];
-                            length_squared += dk * dk;
-                        }
-                        length_squared.sqrt()
-                    };
+                    let dz = p2[2] - p1[2];
+                    if dz < float_distance {
+                        points[i][2] -= float_strength;
+                        points[j][2] += float_strength;
+                    }
+                }
 
+                // Move nodes away from each other
+                for i in 0..num_points {
+                    for j in i + 1..num_points {
+                        let length = points_distance(&points, i, j, dims);
+                        if length < node_repelling_distance {
+                            let c = node_repelling_distance - length;
+                            let d = c.min(node_repelling_strength) * 0.5 / length.max(0.001);
+                            for k in 0..dims {
+                                let u = (points[j][k] - points[i][k]) * d;
+                                points[i][k] -= u;
+                                points[j][k] += u;
+                            }
+                        }
+                    }
+                }
+
+                // Move nodes to satisfy edge length
+                for &(i, j) in &edges_indices {
+                    let length = points_distance(&points, i, j, dims);
                     if length < node_repelling_distance {
-                        let c = node_repelling_distance - length;
-                        let d = c.min(node_repelling_strength) * 0.5 / length.max(0.001);
+                        let c = length - edge_length;
+                        let d = edge_strength * c * -0.5 / length.max(0.001);
                         for k in 0..dims {
                             let u = (points[j][k] - points[i][k]) * d;
                             points[i][k] -= u;
@@ -207,31 +224,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             }
-
-            // Move nodes to satisfy edge length
-            for &(i, j) in &edges_indices {
-                let p1 = &points[i];
-                let p2 = &points[j];
-                let length = {
-                    let mut length_squared: f32 = 0.0;
-                    for k in 0..dims {
-                        let dk = p2[k] - p1[k];
-                        length_squared += dk * dk;
-                    }
-                    length_squared.sqrt()
-                };
-
-                if length < node_repelling_distance {
-                    let c = length - edge_length;
-                    let d = edge_strength * c * -0.5 / length.max(0.001);
-                    for k in 0..dims {
-                        let u = (points[j][k] - points[i][k]) * d;
-                        points[i][k] -= u;
-                        points[j][k] += u;
-                    }
-                }
-            }
-
             for i in 0..num_points {
                 let point = Point3D {
                     x: points[i][0],
@@ -246,21 +238,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .send(&session)?;
             }
 
-            let arrows = edges
-                .iter()
-                .map(|(a, b)| {
-                    let a = node_indices.get(&node_id_to_string(a)).unwrap();
-                    let b = node_indices.get(&node_id_to_string(b)).unwrap();
-                    let a = &points[*a];
-                    let b = &points[*b];
-                    Arrow3D {
-                        origin: [a[0], a[1], a[2]].into(),
-                        vector: [b[0] - a[0], b[1] - a[1], b[2] - a[2]].into(),
-                    }
-                })
-                .collect::<Vec<_>>();
+            let mut arrows = Vec::with_capacity(edges_indices.len());
+            let mut arrow_colors = Vec::with_capacity(edges_indices.len());
+            for &(i, j) in &edges_indices {
+                let length = points_distance(&points, i, j, dims);
+                let p1 = &points[i];
+                let p2 = &points[j];
+                arrows.push(Arrow3D {
+                    origin: [p1[0], p1[1], p1[2]].into(),
+                    vector: [p2[0] - p1[0], p2[1] - p1[1], p2[2] - p1[2]].into(),
+                });
+                arrow_colors.push(if length < edge_length {
+                    let t = ((edge_length - length) / 0.5).clamp(0.0, 1.0);
+                    ColorRGBA::from_rgb(0.lerp(255, t), 255.lerp(0, t), 0)
+                } else {
+                    let t = ((length - edge_length) / 5.0).clamp(0.0, 1.0);
+                    ColorRGBA::from_rgb(0.lerp(127, t), 255.lerp(0, t), 0.lerp(255, t))
+                });
+            }
+            assert_eq!(arrows.len(), edges_indices.len());
+            assert_eq!(arrow_colors.len(), edges_indices.len());
             MsgSender::new("edges")
                 .with_component(&arrows)?
+                .with_component(&arrow_colors)?
                 .send(&session)?;
         }
     }
@@ -268,6 +268,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // rerun::native_viewer::show(&session)?;
 
     Ok(())
+}
+
+fn points_distance(points: &[[f32; MAX_DIMS]], i: usize, j: usize, dims: usize) -> f32 {
+    let p1 = &points[i];
+    let p2 = &points[j];
+    let mut length_squared: f32 = 0.0;
+    for k in 0..dims {
+        let dk = p2[k] - p1[k];
+        length_squared += dk * dk;
+    }
+    length_squared.sqrt()
 }
 
 #[cfg(test)]
