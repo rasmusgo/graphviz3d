@@ -119,7 +119,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
     }
     let colors = colors;
-    let labels = nodes.keys().map(|k| Label(k.clone())).collect::<Vec<_>>();
+    let labels = nodes
+        .values()
+        .map(|node| {
+            for a in &node.attributes {
+                if a.0.to_string() == "label" {
+                    let s = match &a.1 {
+                        Id::Html(s) => s,
+                        Id::Escaped(s) => s,
+                        Id::Plain(s) => s,
+                        Id::Anonymous(s) => s,
+                    };
+                    let start = match s.rfind('/') {
+                        Some(i) => i + 1,
+                        None => match s.find('"') {
+                            Some(i) => i + 1,
+                            None => 0,
+                        },
+                    };
+                    let end = s.rfind('"').unwrap_or(s.len());
+                    return Label(s[start..end].to_string());
+                }
+            }
+            Label(node.id.0.to_string())
+        })
+        .collect::<Vec<_>>();
 
     let edge_strength = 0.1;
     let edge_length = 1.0;
@@ -128,7 +152,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let float_strength = 0.02;
     let float_distance = 2.0;
 
-    for _ in 0..1000 {
+    for _ in 0..10000 {
         // Move parents upwards and children downwards
         for &(i, j) in &edges_indices {
             let p1 = &points[i];
@@ -186,12 +210,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             p2.z += dz * d;
         }
 
-        MsgSender::new("nodes")
-            .with_component(&points)?
-            .with_component(&colors)?
-            .with_component(&labels)?
-            .with_splat(Radius(0.05))?
-            .send(&session)?;
+        for i in 0..num_points {
+            let p = &mut points[i];
+            p.x = p.x.max(-1.0).min(1.0);
+            p.y = p.y.max(-1.0).min(1.0);
+            p.z = p.z.max(-1.0).min(1.0);
+            MsgSender::new(format!("nodes/{i}"))
+                .with_component(&[points[i].clone()])?
+                .with_component(&[colors[i].clone()])?
+                .with_component(&[labels[i].clone()])?
+                .with_splat(Radius(0.05))?
+                .send(&session)?;
+        }
 
         let arrows = edges
             .iter()
