@@ -125,8 +125,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let edge_length = 1.0;
     let node_repelling_strength = 0.1;
     let node_repelling_distance = 2.0;
+    let float_strength = 0.02;
+    let float_distance = 2.0;
 
     for _ in 0..1000 {
+        // Move parents upwards and children downwards
+        for &(i, j) in &edges_indices {
+            let p1 = &points[i];
+            let p2 = &points[j];
+            let dz = p1.z - p2.z;
+            if dz < float_distance {
+                points[i].z += float_strength;
+                points[j].z -= float_strength;
+            }
+        }
+
         // Moves nodes away from each other
         for i in 0..num_points {
             for j in i + 1..num_points {
