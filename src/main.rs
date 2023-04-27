@@ -90,6 +90,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let edges = edges;
 
+    let edges_indices = edges
+        .iter()
+        .map(|(a, b)| {
+            (
+                *node_indices.get(&node_id_to_string(a)).unwrap(),
+                *node_indices.get(&node_id_to_string(b)).unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+
     let mut points = Vec::with_capacity(node_indices.len());
     for _ in 0..num_points {
         let point = Point3D {
@@ -116,7 +126,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let node_repelling_strength = 0.1;
     let node_repelling_distance = 2.0;
 
-    for _ in 0..200 {
+    for _ in 0..1000 {
         // Moves nodes away from each other
         for i in 0..num_points {
             for j in i + 1..num_points {
@@ -143,9 +153,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         // Move nodes to satisfy edge length
-        for (a, b) in &edges {
-            let i = *node_indices.get(&node_id_to_string(a)).unwrap();
-            let j = *node_indices.get(&node_id_to_string(b)).unwrap();
+        for &(i, j) in &edges_indices {
             let p1 = &points[i];
             let p2 = &points[j];
             let dx = p2.x - p1.x;
