@@ -6,7 +6,7 @@ use rerun::{
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let mut session = rerun::SessionBuilder::new("my_app").buffered();
+    let session = rerun::SessionBuilder::new("my_app").buffered();
 
     let points = grid(glam::Vec3::splat(-10.0), glam::Vec3::splat(10.0), 10)
         .map(Point3D::from)
@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_component(&points)?
         .with_component(&colors)?
         .with_splat(Radius(0.5))?
-        .send(&mut session)?;
+        .send(&session)?;
 
     rerun::native_viewer::show(&session)?;
 
