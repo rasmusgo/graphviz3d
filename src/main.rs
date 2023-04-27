@@ -232,7 +232,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .with_component(&[point])?
                     .with_component(&[colors[i].clone()])?
                     .with_component(&[labels[i].clone()])?
-                    .with_splat(Radius(0.15))?
+                    .with_splat(Radius(0.05))?
                     .send(&session)?;
             }
 
