@@ -110,29 +110,85 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let colors = colors;
     let labels = nodes.keys().map(|k| Label(k.clone())).collect::<Vec<_>>();
-    MsgSender::new("nodes")
-        .with_component(&points)?
-        .with_component(&colors)?
-        .with_component(&labels)?
-        .with_splat(Radius(0.05))?
-        .send(&session)?;
 
-    let arrows = edges
-        .iter()
-        .map(|(a, b)| {
-            let a = node_indices.get(&node_id_to_string(a)).unwrap();
-            let b = node_indices.get(&node_id_to_string(b)).unwrap();
-            let a = &points[*a];
-            let b = &points[*b];
-            Arrow3D {
-                origin: [a.x, a.y, a.z].into(),
-                vector: [b.x - a.x, b.y - a.y, b.z - a.z].into(),
+    let edge_strength = 0.1;
+    let edge_length = 1.0;
+    let node_repelling_strength = 0.1;
+    let node_repelling_distance = 2.0;
+
+    for _ in 0..200 {
+        // Moves nodes away from each other
+        for i in 0..num_points {
+            for j in i + 1..num_points {
+                let p1 = &points[i];
+                let p2 = &points[j];
+                let dx = p2.x - p1.x;
+                let dy = p2.y - p1.y;
+                let dz = p2.z - p1.z;
+                let length = (dx * dx + dy * dy + dz * dz).sqrt();
+
+                if length < node_repelling_distance {
+                    let c = length - node_repelling_distance;
+                    let d = node_repelling_strength * c * -0.5 / length;
+                    let p1 = &mut points[i];
+                    p1.x -= dx * d;
+                    p1.y -= dy * d;
+                    p1.z -= dz * d;
+                    let p2 = &mut points[j];
+                    p2.x += dx * d;
+                    p2.y += dy * d;
+                    p2.z += dz * d;
+                }
             }
-        })
-        .collect::<Vec<_>>();
-    MsgSender::new("edges")
-        .with_component(&arrows)?
-        .send(&session)?;
+        }
+
+        // Move nodes to satisfy edge length
+        for (a, b) in &edges {
+            let i = *node_indices.get(&node_id_to_string(a)).unwrap();
+            let j = *node_indices.get(&node_id_to_string(b)).unwrap();
+            let p1 = &points[i];
+            let p2 = &points[j];
+            let dx = p2.x - p1.x;
+            let dy = p2.y - p1.y;
+            let dz = p2.z - p1.z;
+            let length = (dx * dx + dy * dy + dz * dz).sqrt();
+            let c = length - edge_length;
+            let d = edge_strength * c * -0.5 / length;
+
+            let p1 = &mut points[i];
+            p1.x -= dx * d;
+            p1.y -= dy * d;
+            p1.z -= dz * d;
+            let p2 = &mut points[j];
+            p2.x += dx * d;
+            p2.y += dy * d;
+            p2.z += dz * d;
+        }
+
+        MsgSender::new("nodes")
+            .with_component(&points)?
+            .with_component(&colors)?
+            .with_component(&labels)?
+            .with_splat(Radius(0.05))?
+            .send(&session)?;
+
+        let arrows = edges
+            .iter()
+            .map(|(a, b)| {
+                let a = node_indices.get(&node_id_to_string(a)).unwrap();
+                let b = node_indices.get(&node_id_to_string(b)).unwrap();
+                let a = &points[*a];
+                let b = &points[*b];
+                Arrow3D {
+                    origin: [a.x, a.y, a.z].into(),
+                    vector: [b.x - a.x, b.y - a.y, b.z - a.z].into(),
+                }
+            })
+            .collect::<Vec<_>>();
+        MsgSender::new("edges")
+            .with_component(&arrows)?
+            .send(&session)?;
+    }
 
     // rerun::native_viewer::show(&session)?;
 
