@@ -187,10 +187,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 for &(i, j) in &edges_indices {
                     let p1 = &points[i];
                     let p2 = &points[j];
-                    let dz = p2[2] - p1[2];
+                    let dz = p1[2] - p2[2];
                     if dz < float_distance {
-                        points[i][2] -= float_strength;
-                        points[j][2] += float_strength;
+                        points[i][2] += float_strength;
+                        points[j][2] -= float_strength;
                     }
                 }
 
