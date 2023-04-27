@@ -100,39 +100,57 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect::<Vec<_>>();
 
     let mut colors = Vec::with_capacity(node_indices.len());
-    for _ in 0..num_points {
-        colors.push(ColorRGBA::from_rgb(
-            rng.gen_range(0..255),
-            rng.gen_range(0..255),
-            rng.gen_range(0..255),
-        ));
-    }
-    let colors = colors;
-    let labels = nodes
-        .values()
-        .map(|node| {
+    let mut labels = Vec::with_capacity(node_indices.len());
+    {
+        let mut color_map = HashMap::new();
+        for node in nodes.values() {
+            let mut color = ColorRGBA::from_rgb(
+                rng.gen_range(0..255),
+                rng.gen_range(0..255),
+                rng.gen_range(0..255),
+            );
+            let mut label = Label(node.id.0.to_string());
             for a in &node.attributes {
-                if a.0.to_string() == "label" {
-                    let s = match &a.1 {
-                        Id::Html(s) => s,
-                        Id::Escaped(s) => s,
-                        Id::Plain(s) => s,
-                        Id::Anonymous(s) => s,
-                    };
-                    let start = match s.rfind('/') {
-                        Some(i) => i + 1,
-                        None => match s.find('"') {
+                let a0 = a.0.to_string();
+                let a1 = a.1.to_string();
+                match a0.as_str() {
+                    "label" => {
+                        let s = match &a.1 {
+                            Id::Html(s) => s,
+                            Id::Escaped(s) => s,
+                            Id::Plain(s) => s,
+                            Id::Anonymous(s) => s,
+                        };
+                        let start = match s.rfind('/') {
                             Some(i) => i + 1,
-                            None => 0,
-                        },
-                    };
-                    let end = s.rfind('"').unwrap_or(s.len());
-                    return Label(s[start..end].to_string());
+                            None => match s.find('"') {
+                                Some(i) => i + 1,
+                                None => 0,
+                            },
+                        };
+                        let end = s.rfind('"').unwrap_or(s.len());
+                        label = Label(s[start..end].to_string());
+                    }
+                    "shape" => match color_map.get(&a1) {
+                        Some(&c) => {
+                            color = c;
+                        }
+                        None => {
+                            color_map.insert(a1, color);
+                        }
+                    },
+                    _ => (),
                 }
             }
-            Label(node.id.0.to_string())
-        })
-        .collect::<Vec<_>>();
+            colors.push(color);
+            labels.push(label);
+        }
+        println!("color_map:\n{:?}", color_map);
+    }
+    let colors = colors;
+    let labels = labels;
+    assert_eq!(colors.len(), num_points);
+    assert_eq!(labels.len(), num_points);
 
     let edge_strength = 0.1;
     let edge_length = 1.0;
@@ -220,11 +238,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     y: points[i][1],
                     z: points[i][2],
                 };
-                MsgSender::new(format!("nodes/{i}"))
+                MsgSender::new(format!("nodes/{}", &labels[i].0))
                     .with_component(&[point])?
                     .with_component(&[colors[i].clone()])?
                     .with_component(&[labels[i].clone()])?
-                    .with_splat(Radius(0.05))?
+                    .with_splat(Radius(0.15))?
                     .send(&session)?;
             }
 
